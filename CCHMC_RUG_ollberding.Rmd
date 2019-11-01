@@ -1,0 +1,514 @@
+---
+title: 'An Introduction to the Harrell“verse”: Predictive Modeling using the Hmisc
+  and rms Packages'
+author: Nicholas Ollberding
+date: '2019-09-03'
+slug: an-introduction-to-the-harrell-verse-predictive-modeling-using-the-hmisc-and-rms-packages
+categories:
+  - Predictive Modeling
+tags:
+  - R
+  - rms
+  - Hmisc
+  - Data Analysis
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2019-09-03T14:18:59-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+<br>
+
+This is post is to introduce members of the **Cincinnati Children's Hospital Medical Center R Users Group** [(CCHMC-RUG)](https://github.com/CCHMC-RUG) to some of the functionality provided by Frank Harrell's [Hmisc](http://biostat.mc.vanderbilt.edu/wiki/Main/Hmisc) and [rms](http://biostat.mc.vanderbilt.edu/wiki/Main/Rrms) packages for data description and predictive modeling. For those of you who have worked with these packages before, hopefully we will cover something new. Dr. Harrell is the founding chair of the Department of Biostatistics at Vanderbilt University (until 2017), Fellow of the American Statistical Association, and a member of the [R Foundation](https://www.r-project.org/foundation/). A full biography and list of his numerous accomplishments and honors can be found on his Vanderbilt University [webpage](http://biostat.mc.vanderbilt.edu/wiki/Main/FrankHarrell).
+
+
+I titled the post *An Introduction to the Harrell“verse”*, because like the tidyverse, these packages are a tremendous resource for the R community; share an underlying grammar and data structure; and reflect the opinioned philosophy of the developer.  I also like the term *Harrell"verse"* because the **Hmisc and rms packages link users to a much broader set of materials on modern statistical methods and computing including predictive modeling, estimation, hypothesis testing, and study design.** I have no idea how he finds the time to develop these rich and intensive resources, and share his thoughts on social media and elsewhere, but his contributions open-source software and insight into the application of statistical methods are much appreciated! Links to many of these materials can be found at his [webpage](http://biostat.mc.vanderbilt.edu/wiki/Main/FrankHarrell). A few highlights include:
+
+* His [Statistical Thinking blog](https://www.fharrell.com/)
+* The [Regression Modeling Strategies textbook, courses, and course notes](http://biostat.mc.vanderbilt.edu/wiki/Main/RmS). I have taken both his 1-day and full week courses and highly recommend them!
+* Biostatistics for Biomedical Research [e-book](http://hbiostat.org/doc/bbr.pdf)
+* datamethods [webpage](https://discourse.datamethods.org/)
+* Numerous contributions on [stackexchange](https://stats.stackexchange.com/users/4253/frank-harrell)
+* He also is extremely active on [twitter](https://twitter.com/f2harrell?lang=en)
+* And as of recent, leads a weekly one-hour live webinar on applied statistics/biostatistics 
+
+<br>
+
+My goal for this RUG session is to briefly introduce you to some of the functionally of the Hmisc and rms packages that I think will be of interest to anyone performing statistical modeling in R. **These examples are shown at a *high-level* and are not meant to demonstrate “best practices” with respect to model building and validation, etc.** They just serve to show some of the tools these package can help you bring to bear on a project once working in the *Harrell"verse”*.
+
+Below, I present various functions found in these packages as a series of five tips These *"tips"* just scratch the surface of the what is possible with Hmisc and rms, but I hope serve to highlight how model complexity can be more easily incorporated when fitting generalized linear models, fitted models visualized, and predictions made and validated when using these packages. Topics covered include: 
+
+1. Examining your data with Hmisc
+2. Regression modeling allowing for complexity with rms
+3. Validating fitted models with rms::validate() and rms:calibrate()
+4. Penalized regression with rms::pentrace()
+5. Models other than OLS for continuous or semi-continuous Y in rms
+
+<br>
+
+I highly recommend reading Professor Harrell's [Regression Modeling Strategies textbook](http://biostat.mc.vanderbilt.edu/wiki/Main/RmS) (2nd edition) and course notes to learn more.  Both texts provide detailed code and explanations and **Chapter 6 of the textbook is devoted to R and the rms package**.
+
+The data used in the examples below come from the UCI Machine Learning Repository (https://archive.ics.uci.edu/ml/datasets/Wine) and can be accessed via the ucidata R package found on James Balamuta's [github repository](https://github.com/coatless/ucidata). We will be trying to predict whether a wine is red or white from a set of 13 features. A description of the dataset from the UCI website is provided below.
+
+```
+Data Set Information:
+
+These data are the results of a chemical analysis of wines grown in the same region in Italy but derived from three different cultivars. The analysis determined the quantities of 13 constituents found in each of the three types of wines. 
+
+I think that the initial data set had around 30 variables, but for some reason I only have the 13 dimensional version. I had a list of what the 30 or so variables were, but a.) I lost it, and b.), I would not know which 13 variables are included in the set. 
+
+The attributes are (dontated by Riccardo Leardi, riclea '@' anchem.unige.it ) 
+1) Alcohol 
+2) Malic acid 
+3) Ash 
+4) Alcalinity of ash 
+5) Magnesium 
+6) Total phenols 
+7) Flavanoids 
+8) Nonflavanoid phenols 
+9) Proanthocyanins 
+10)Color intensity 
+11)Hue 
+12)OD280/OD315 of diluted wines 
+13)Proline 
+
+In a classification context, this is a well posed problem with "well behaved" class structures. A good data set for first testing of a new classifier, but not very challenging.
+
+Attribute Information:
+
+All attributes are continuous 
+```
+
+
+<br>
+<br>
+
+# Installing and loading packages
+```{r load_packages, message = FALSE}
+#Install ucidata package from github 
+devtools::install_github("coatless/ucidata")
+
+#Load packages
+library("tidyverse"); packageVersion("tidyverse")
+library("rms"); packageVersion("rms")
+library("ucidata"); packageVersion("ucidata")
+library("cowplot"); packageVersion("cowplot")
+```
+
+
+<br>
+<br>
+
+# Loading example dataset
+
+Now that the ucidata package is loaded, we can call the wine data set using the base R function data(). We will also create a binary indicator for red_wine that will serve as our outcome variable where "red wine" == 1 and "white wine" == 0.  The variable "color" is dropped from the data.frame using dplyr::select(). 
+
+
+```{r load_data}
+#Load wine data
+data(wine)
+
+#Recode outcome
+mydata <- wine %>%
+  dplyr::mutate(red_wine = ifelse(color == "Red", 1, 0)) %>%
+  dplyr::select(-color)  
+```
+
+
+<br>
+<br>
+
+
+# Tip 1. Examining your data with Hmisc
+
+The Hmisc package has some excellent functions to help you understand your data in terms of the distribution of variables, levels of categorical variables, number of missing values, etc.  It also has some very useful commands to help visualize this information. Below are a few of the functions I use most often. 
+
+<br>
+
+## Hmisc::describe()
+
+*Describe* is a very handy function that allows one to…as you might expect…describe a data.frame.  It will provide information on the count, number of missing values, and distinct values, as well as describe and plot the distribution of continuous values.  For categorical variables the number of levels and counts are also provided. I find myself using the function as a first pass to look for implausible values in a data.frame, get a feel for the extent of missing data, and to quickly access specific quantiles for a set of predictors. The code below will generate and plot this information.  The html options are provided to improve the formatting.
+
+```{r, describe}
+d <- Hmisc::describe(mydata)
+html(d, size = 80, scroll = TRUE)
+```
+
+<br>
+
+As you can see, much useful descriptive information is printed to the console.  You can plot the histograms for these predictors separately  using the plotting commands below.  
+
+
+```{r plot_describe}
+p <- plot(d)
+p$Continuous
+```
+
+
+<br>
+<br>
+
+
+## Hmisc::summaryM() to obtain a table of predictors stratified by outcome
+
+Hmisc::summaryM() summarizes the variables listed in an S formula, computing descriptive statistics and optionally statistical tests for group differences. This function is typically used when there are multiple left-hand-side variables that are independently against by groups marked by a single right-hand-side variable (*from help*). 
+
+I find summaryM can provide a great "head start" to generating a “Table 1” for a manuscript.  However, one should think about the information that is being conveyed when providing a table of unconditional tests via the test = TRUE option.  Differences between the unconditional and the conditional estimates can be a source of confusion (or at least may end up requiring a longer than needed explanation) when both are presented. Moreover, one should think hard about whether or not to include formal tests if the study was not specifically designed to test these factors (and whether the p-values actually provide useful information). I am including the test = TRUE option here just to highlight this functionality.  
+
+```{r table1}
+s <- Hmisc::summaryM(fixed_acidity + volatile_acidity + citric_acid + residual_sugar + chlorides + free_sulfur_dioxide + 
+              total_sulfur_dioxide+ density + pH + sulphates + alcohol + quality  ~ red_wine, data = mydata,
+              overall = TRUE, test = TRUE, continuous = 5)
+ 
+
+html(s, caption='Predictors according to wine type',
+     exclude1 = TRUE, npct = 'both', digits = 2,
+     prmsd = TRUE, brmsd = TRUE, msdsize = mu$smaller2)
+```
+
+
+<br>
+<br>
+
+## Spike histograms with Hmisc::histSpikeg(), ggplot, and cowplot
+
+Dr. Harrell’s histSpikeg function provides a very powerful approach to visualize the univariable association between a continuous predictor and binary outcome. It does this by binning the continuous x variable into equal-width bins and then computing and plotting the frequency counts of Y within each bin. The function then displays the proportions as a vertical histogram with a lowess curve fit to the plot. histSpikeg allows this functionality to be added as a ggplot layer. 
+
+Here I am combing the plots into a single figure using [Claus Wilke’s cowplot package plot_grid()](https://cran.r-project.org/web/packages/cowplot/vignettes/introduction.html) function.
+
+```{r spike_histograms, fig.width = 12, fig.height = 6}
+dd <- datadist(mydata)
+options(datadist = "dd")
+
+a <- ggplot(mydata, aes(x = alcohol, y = red_wine)) +
+  Hmisc::histSpikeg(red_wine ~ alcohol, lowess = TRUE, data = mydata) +
+  labs(x = "\nAlcohol Content", y = "Probability(Red Wine)\n")
+
+b <- ggplot(mydata, aes(x = citric_acid, y = red_wine)) +
+    Hmisc::histSpikeg(red_wine ~ citric_acid, lowess = TRUE, data = mydata) +
+    labs(x = "\nCitric Acid", y = "Probability(Red Wine)\n")
+
+c <- ggplot(mydata, aes(x = sulphates, y = red_wine)) +
+    Hmisc::histSpikeg(red_wine ~ sulphates, lowess = TRUE, data = mydata) +
+    labs(x = "\nSulphates", y = "Probability(Red Wine)\n")
+
+cowplot::plot_grid(a, b, c,  nrow = 1, ncol = 3, scale = .9, labels = "AUTO")
+```
+
+<br>
+
+These plots suggest that allowing for complexity/flexibly of the right hand side of the linear model equation may provide improved performance. However, Dr. Harrell has argued (convincingly IMO) that including non-linear terms for continuous predictors should typically be default practice since 1.) truly linear functional forms are probably the expectation more so than the rule (at least for most biomedical phenomena) and 2.) you will likely have more success and "miss small" when including non-linear terms if the true association happens to be linear than if the true association is highly non-linear and one models the association with a simple linear term (i.e. fits a linear term to a u-shaped association diminishing model performance). The cost, of course, is a few model degrees of freedom and the possibility for overfitting...which we will come back to latter. 
+
+<br>
+<br>
+
+## Visualizing patterns of missing data with Hmisc::naplot and Hmisc::naclus
+
+While there are no missing values in these data, the Hmisc package has several nice features to assess and visualize the extent of missing data and patterns of missing data among variables.  Here we will use the dplyr::mutate() function to set some of the values to missing.  Then the naplot function is used to plot the proportion of missing values for each variable in the dataset and the naclus function is used to assess patterns of “missingness” among variables. This information can be very helpful to understand why values might be missing and to inform imputation strategies. 
+
+While there is no need to impute missing values in this example, the [Hmisc:: aregImpute function]( https://www.rdocumentation.org/packages/Hmisc/versions/4.2-0/topics/aregImpute) provides a rigorous approach to handling missing data via multiple imputation using additive regression with various options for bootstrapping, predictive mean matching, etc.  Multiple imputations can then be properly combined using Rubin's rules via the fit.mult.impute function.  This function can also be used with output from Stef van Buuren’s [MICE package](https://stefvanbuuren.name/mice/).
+
+
+```{r missing, fig.width = 12, fig.height = 8}
+missing_df <- mydata %>%
+  dplyr::mutate(fixed_acidity = ifelse(row_number() %in% c(1:100), NA, fixed_acidity),
+         volatile_acidity = ifelse(row_number() %in% c(1:200), NA, volatile_acidity),
+         citric_acid = ifelse(row_number() %in% c(50:400), NA, citric_acid),
+         residual_sugar = ifelse(row_number() %in% c(1000:1050), NA, residual_sugar),
+         chlorides = ifelse(row_number() %in% c(1000:1100), NA, chlorides))
+
+
+par(mfrow = c(1,2))
+na_patterns <- Hmisc::naclus(missing_df)
+Hmisc::naplot(na_patterns, 'na per var')
+plot(na_patterns)
+```
+```{r, reset_plot, echo=FALSE}
+par(mfrow = c(1,1))
+```
+
+
+<br>
+<br>
+
+
+# Tip 2. Regression modeling allowing for complexity with rms 
+
+<br>
+
+The Hmisc and rms packages were recommend to me some time ago when I was looking for better approaches (than say base R functions...as good as they are) to incorporate non-linear terms and interactions into a generalized linear model framework. **The rms package makes adding such complexity extremely accessible** with reasonable defaults. Professor Harrell discusses the use of restricted cubic spline terms (natural splines) to relax the assumption of linearity for continuous predictors,  as well as some of the advantages of constraining the spline function to be linear in the tails in Chapter 2 of the second edition of his [Regression Modeling Stratigies](https://www.springer.com/us/book/9783319194240#aboutBook) textbook. He also provides a detailed description regarding the number and placement of knots that I found quite informative. I typically stick with the recommend default knot placement unless I have good reason to do otherwise, but alternative placement can be easily accommodated. 
+
+The rms package also eases the programming required to fit and test interaction terms (using anova.rms) and recognizes syntax of the forms below which were taken from [Cole Beck's rms tutorial](https://couthcommander.github.io/rworkshop/workshop.html):
+
+* y ~ a:b, : indicates the interaction of a and b
+* y ~ a*b, equivalent to y ~ a+b+a:b
+* y ~ (a+b)^2, equivalent to y ~ (a+b)*(a+b)
+* and the restricted interaction term %ia% that for non-linear predictors is not doubly nonlinear in the interaction
+
+The code below will fit an additive model to the full set of predictors allowing for flexibility using restricted cubic splines fit via the rms::rcs() function.
+
+<br>
+
+```{r wald_check}
+m0 <- lrm(red_wine ~ rcs(fixed_acidity, 4) + rcs(volatile_acidity, 4) + rcs(citric_acid, 4) + rcs(residual_sugar, 4) + 
+          rcs(chlorides, 4) + rcs(free_sulfur_dioxide, 4) + rcs(total_sulfur_dioxide, 4) + rcs(density, 4) + rcs(pH, 4) + 
+          rcs(sulphates, 4) + rcs(alcohol, 4) + rcs(quality, 3),
+          data = mydata, x = TRUE, y = TRUE)
+print(m0, coef = FALSE)
+plot(anova(m0))
+```
+
+**So…it looks like we can rather easily predict the type of wine from this set of features!**  If I would have known this, I might have selected a more difficult example problem. *I suppose if I did not know at least this much, my this a second career as a sommelier is probably out of the question at this point!*
+
+Our next steps would typically be to validate the model and assess how well it is calibrated over the range of predictions, but here I want to continue an example that is a bit more similar to what I commonly see in practice (i.e. we have a set of features with moderate predictive performance). I also want to trim down the number of predictors to highlight some of the plotting functions.
+
+Therefore, I will proceed using only two predictors that have relatively small conditional chi-square values (since even the top few predictors have excellent performance) to show some of the key functionality. The first model is a flexible additive model allowing for 3 knots for each predictor. 
+
+```{r m2}
+m2 <- lrm(red_wine ~ rcs(pH, 3) + rcs(sulphates, 3), data = mydata, x = TRUE, y = TRUE)
+print(m2)
+anova(m2)
+
+p1 <- ggplot(Predict(m2, pH))
+p2 <- ggplot(Predict(m2, sulphates))
+p3 <- ggplot(Predict(m2, pH, fun = plogis))
+p4 <- ggplot(Predict(m2, sulphates, fun = plogis))
+cowplot::plot_grid(p1, p2, p3, p4, nrow = 2, ncol = 2, scale = .9)
+```
+
+The Brier score and C-statistic suggest possible moderate predictive performance Printing the model also provides information and tests for the coefficients and non-linear terms (which may or may not be informative depending on your goals). The **anova.rms function is quite impressive** and automatically tests the most meaningful hypotheses in a design including Wald tests for the non-linear terms, and interactions if they were included (as we will see below), as well as chunk tests for any set of terms of interest. Here is a link with an example of the chunk test on [stackexchange](https://stats.stackexchange.com/questions/27429/what-are-chunk-tests
+).
+
+The Predict function selects plausible values to provide predictions over and can be plotted using ggplot.  By default, the predictions for rms::lrm() are returned on the log-odds scale.  If we provide a function to the fun = option, we can obtain the predictions on an alternative scale.  Here we use the plogis function to return the predicted probabilities.  These are calculated at the median value for continuous variables and at the most common level for categorical variables by default (but can be changed).
+ 
+Below I use the ^2 operator to include all two-way interactions in the model (in this simple example this is a bit of overkill and other choices of syntax used). The **rms::bplot() function is very cool** and allows one to visualize the two-way interaction. The last line of code highlights how specific values of a feature can be provided to the rms::Predict () function.  This is incredibly useful when you want to examine how multiple factors are operating. Dr. Harrell provides many example of this in his RMS textbook.
+
+```{r m3}
+m3 <- lrm(red_wine ~ (rcs(pH, 3) + rcs(sulphates, 3))^2, data = mydata, x = TRUE, y = TRUE)
+print(m3, coef = FALSE)
+anova(m3)
+
+pred_intx <- Predict(m3, 'pH','sulphates', fun = plogis, np = 75)
+bplot(pred_intx, yhat ~ pH + sulphates, lfun = wireframe,
+      ylab = "Sulphates", zlab = "Pr(Red Wine)\n")
+
+
+ggplot(Predict(m2, sulphates, pH = c(3.0, 3.2, 3.4), fun = plogis))
+```
+
+<br>
+
+The inclusion of the interaction does not look to add much in term of the absolute or rank-based discrimination. However, this example highlights the various types of tests that anova.rms performs by default. It also allows us to see the response profile surface returned by bplot(). 
+
+Let's now go ahead and fit the restricted interaction just for instructive purposes.
+
+```{r m4}
+#%ia% is restricted interaction - not doubly nonlinear
+m4 <- lrm(red_wine ~ rcs(pH, 3) + rcs(sulphates, 3) + pH %ia% sulphates, data = mydata, x = TRUE, y = TRUE)  
+print(m4, coef = FALSE)
+anova(m4)
+
+pred_intx_r <- Predict(m4, 'pH','sulphates', fun = plogis, np = 75)
+bplot(pred_intx_r, yhat ~ pH + sulphates, lfun = wireframe,
+      ylab = "Sulphates", zlab = "Pr(Red Wine)\n")
+```
+
+<br>
+
+Here we can see that the results are generally unchanged; however, the restricted interaction and test is for 1 d.f.; whereas, the interaction for the cross-product term with 3 knots in each of the predictors requires 4 d.f.
+
+The summary.rms() function can be used to obtain the log-odds and exponentiated odds ratios for each predictor. The interquartile odds ratios are provided by default. These can be easily changed, and more interesting or complex associations tested.
+
+As with other GLMs, the rms fitted values of the rms::lrm() object can be obtained for all observations using the predict function.
+ 
+
+```{r, summary}
+summary(m4)
+summary(m4, pH = c(2.97, 3.50)) #contrast of 5th verus 95th %tile
+
+r <- mydata
+r$fitted <- predict(m4, type = "fitted")
+head(r$fitted)
+```
+
+
+<br>
+<br>
+
+
+# Tip 3. Validating fitted models with rms::validate() and rms:calibrate()
+
+<br>
+
+In Chapter 5 of the RMS textbook, the bootstrap procure is advocated for obtaining nearly unbiased estimates of a model’s future performance using resampling. The rms::validate() function implements this procedure to return bias-corrected indexes that are specific to each type of model. **There are many indices of performance that are returned!** Use ?validate.lrm to get further information on each metric. The steps performed to obtain optimism correct estimates based on bootstrap resampling are:
+
+* Estimate model performance in the original sample of size n
+* Draw a bootstrap sample of the same size n and fit the model to the bootstrap sample
+* Apply the model obtained in the bootstrap sample to the original sample
+* Subtract the accuracy measure found in the bootstrap sample from the accuracy measure in the original sample - this is the estimate of optimism (i.e. overfitting)
+* Repeat the process many times and average over the repeats to obtain a final estimate of optimism for each measure
+* Subtract that value from the observed/apparent accuracy measure to get the optimism corrected estimate
+
+Alternative approaches such as cross-validation or .632 resampling can also be implemented. Below is an example using 200 bootstrap resamples. The second line of code computes the C-statistic (a.k.a. area under the ROC curve) from Somer's D. *There is a lot going on here...but, the validate function abstracts most of it away!*
+
+<br>
+
+```{r m1_val}
+(val <- validate(m4, B = 200))
+(c_opt_corr <- 0.5 * (val[1, 5] + 1))
+```
+
+<br>
+
+Here we see little evidence of overfitting.  This would be expected given the large sample size and small model d.f. However, the difference between the apparent and optimism-corrected estimates can be quite large when estimating complex models on small data sets; suggesting the potential for worse performance when fit to new data.  **Good information on the number of subjects required to fit predictive models** for [continuous](https://onlinelibrary.wiley.com/doi/full/10.1002/sim.7993) and [binary](https://onlinelibrary.wiley.com/doi/full/10.1002/sim.7992) outcomes to limit overfitting can be found in this excellent set of papers by Richard Riley and colleagues.
+
+Calibration is an integral component of model validation and aims to gauge how well the model predictions fit observed data (over the full range of values). Bootstrap resampling can be used to obtain out-of-sample estimates of model performance for calibration as well.  
+
+rms::calibrate() uses bootstrapping or cross-validation to get bias-corrected (overfitting-corrected) estimates of predicted vs. observed values based on sub-setting predictions over a sequence of predicted values. The function shows the ideal, apparent, and optimism-corrected calibration curves. It also provides a histogram highlighting the density of predictions. 
+
+Here is an example.
+
+```{r m1_cal}
+cal <- calibrate(m4, B = 200)
+plot(cal)
+```
+
+<br>
+
+The model looks to fit well over the range of predicted probabilities. Thus, given the limited optimism, and excellent calibration, we might expect this model to perform well in a new sample.
+
+<br>
+<br>
+
+
+# Tip 4. Penalized regression with rms::pentrace()
+
+<br>
+
+Penalized regression can be used to improve the performance of a model when fit to new data by reducing the impact of extreme coefficients. This is a form of **bias-variance trade-off** off where we can downwardly bias the coefficients to improve the error in new data. Penalized regression is similar to ridge regression in that it is an "L-2" penalty that leaves all terms in the model, but shrinks them towards zero. It is implemented here using penalized maximum likelihood estimation. For those of you familiar with Bayesian statistics, this approach can be thought of as a “frequentist way” to bring in the idea of a "skeptical prior" into the model building exercise. The less weight we want to assign to the raw coefficients, the more we can shrink them. The benefits being potentially improved predictions in new data and reduced effective degrees of freedom. However, there is some work to from [Ben Van Calster, Maarten van Smeden, Ewout W. Steyerberg](https://arxiv.org/abs/1907.11493) for example, that suggest that while shrinkage improves predictions on average, it can perform poorly in individual datasets and does not typically solve problems associated with small sample size or low number of events per variable. So it is not a panacea for not collecting enough data.  
+
+A particularly useful function in rms::pentrace() is that the main effect terms can receive different penalties (shrinkage factors) than, for example, the non-linear terms or interactions. Thus, it provides a very nice approach to allow for model complexity, while shrinking some/all estimates depending on need. 
+
+While for these data little adjustment for overfitting is needed, we will apply pentrace function for instructional purposes.  Here the AIC.c is sought to be **maximized** and the penalty value identified via a grid search. We see that little penalization is required to achieve the maximum AIC.c and that the effective d.f. are reduced in the penalized models.
+
+<br>
+
+```{r pen1}
+pentrace(m4, seq(.01, .1, by = .01))
+m5 <- update(m4, penalty = .01)
+m5
+```
+<br>
+```{r pen2}
+pentrace(m4, list(simple = 0.01, nonlinear = c(0, 0.01, 0.02, 0.03), interaction = c(0, 0.01, 0.02, 0.03)))
+m6 <- update(m4, penalty = .01)
+m6
+effective.df(m6)
+```
+
+<br>
+<br>
+
+
+# Tip 5. Models other than OLS for continuous or semi-continuous Y
+
+<br>
+
+A nice feature of the rms package is that one can use it to fit a wide range of models. For example, if we want to make predictions regarding a conditional quantile, rms wraps Roger Koenker's [quantreg package](https://cran.r-project.org/web/packages/quantreg/index.html) allowing for most of the benefits of the rms package to applied to quantile regression models. The only limitation I am aware of is that when using rms one can only model a single value of tau (quantile) at a time.  If one wishes to model ordinal or semi-continuous data, the rms::orm() function fits ordinal cumulative probability models for continuous or ordinal response variables. In addition, the package can be used to fit OLS regression, survival models, generalized least squares for longitudinal data, etc.
+
+Models other than OLS may come in handy when modeling a continuous outcome and one want to make "less restrictive" assumptions regarding the distribution of Y given X.  Quantile regression only requires that Y|X be continuous. The proportional odds model only assumes that the association is the same for all outcome groups (i.e. proportional odds or parallel regression assumption). So, if one does not want to rely on the central limit theorem when making predictions, these alternative approaches can be considered depending on your goals. 
+
+Below we fit a fairly simple two-term model with non-linear terms and interactions to predict values of residual sugar from pH and sulphates. OLS, ordinal, and quantile regression models are fit to the data and various predictions made.
+
+```{r lm, message = FALSE}
+lm1 <- ols(residual_sugar ~ (rcs(pH, 3) + rcs(sulphates, 3))^2, data = mydata, x = TRUE, y = TRUE) 
+print(lm1, coefs = FALSE)
+
+r <- mydata
+r$resid <- resid(lm1)
+r$fitted <- fitted(lm1)
+
+r1 <- ggplot(data = r, aes(x = fitted, y = resid)) + geom_point() + geom_smooth()
+r2 <- ggplot(data = r, aes(x = pH, y = resid)) + geom_point() + geom_smooth()
+r3 <- ggplot(data = r, aes(x = sulphates, y = resid)) + geom_point() + geom_smooth()
+r4 <- ggplot(data = r, aes(sample = resid)) + stat_qq() + geom_abline(intercept = mean(r$resid), slope = sd(r$resid))
+cowplot::plot_grid(r1, r2, r3, r4, nrow = 2, ncol = 2, scale = .9)
+
+ggplot(Predict(lm1, sulphates, pH = c(3, 3.2, 3.4)))
+
+```
+
+<br>
+We can see above that neither the r-squared value nor the model fit is great. However, the effect of pH and sulphates does look to interact in a non-linear manner when predicting residual sugar. We could further examine the model predictions at this time or consider some type of transformation, etc. or alternative model. 
+
+We will fit a log-log proportional odds model as implemented by rms::orm() to these data and obtain mean and median predictions for residual sugar as a function of pH and sulphates.
+
+
+```{r orm, message = FALSE}
+orm1 <- orm(residual_sugar ~ (rcs(pH, 3) + rcs(sulphates, 3))^2, data = mydata, x = TRUE, y = TRUE) 
+print(orm1, coefs = FALSE)
+
+M <- Mean(orm1)
+qu <- Quantile(orm1)
+med <- function(x) qu(0.5, x)
+p1 <- ggplot(Predict(orm1, sulphates, pH = c(3, 3.2, 3.4), fun = M)) + coord_cartesian(ylim = c(1, 8))
+p2 <- ggplot(Predict(orm1, sulphates, pH = c(3, 3.2, 3.4), fun = med)) + coord_cartesian(ylim = c(1, 8))
+plot_grid(p1, p2, nrow = 1, ncol = 2, scale = 0.9, labels = c("ORM: Mean", "ORM: Median"))
+```
+
+<br>
+
+We generally see the same pattern as we did with OLS.  
+
+No lets try the rms::Rq function to predcit the median value from this same set of predictors.
+
+```{r rq, message = FALSE, warning = FALSE}
+rq1 <- Rq(residual_sugar ~ (rcs(pH, 3) + rcs(sulphates, 3))^2, data = mydata, x = TRUE, y = TRUE, tau = 0.5) 
+print(rq1, coefs = FALSE)
+ggplot(Predict(rq1, sulphates, pH = c(3, 3.2, 3.4)))
+```
+
+<br>
+At this point we could compare the optimism-corrected estimates of model performance and the calibration curves to assess performance. We could also model other quantiles by changing tau to see if the impact of the predictors differs across quantiles of residual sugar.
+
+<br>
+<br>
+
+
+# Bonus: taking predictions outside of R
+
+<br>
+
+If you want to take your predictions outside of R, to drop them into a java script for web-based visualization for example, the rms::Function() will output the R code used to make the model predictions.
+
+<br>
+
+```{r prediction}
+(pred_logit <- Function(m4))
+```
+
+<br>
+<br>
+
+# Session Info
+
+<br>
+
+```{r session}
+sessionInfo()
+```
+
+
+
+
